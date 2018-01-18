@@ -93,7 +93,7 @@ public class SiplogTWO
     //  dst ip [7]
     //  filtered [8]
     //  method(invite,notify,registraion,supscription) [9]
-    String[] filter = new String[20];
+    String[] filter;
     List<string[]> callLegsDisplayed = new List<string[]>(); // filtered call legs where [8] == filtered 
     List<string[]> selectedmessages = new List<string[]>();  // call legs  where [5] == selected 
     List<string> IPsOfIntrest = new List<string>();   // all the IP addresses from the selectedmessages
@@ -203,6 +203,7 @@ public class SiplogTWO
             { "dst IP", "113", "7"}
         };
         callsDisplaysortIdx = 0;
+        filter = new String[20];
     }
 
     static void Main(String[] arg)
@@ -243,6 +244,7 @@ public class SiplogTWO
             }
 
             SiplogTWOObj.displayMode = "calls";
+            Array.Sort(arg);
             Thread FileReadThread = new Thread(() => { SiplogTWOObj.FileReader(arg); });
             FileReadThread.Name = "File Reader Thread";
             FileReadThread.Start();
@@ -253,7 +255,7 @@ public class SiplogTWO
         {
             lock (_locker)
             {
-                Console.Clear();
+                
                 Console.WriteLine("\nMessage ---\n{0}", ex.Message);
                 Console.WriteLine(
                     "\nHelpLink ---\n{0}", ex.HelpLink);
@@ -606,7 +608,6 @@ public class SiplogTWO
         {
             UpdateFileLoadProgress(); 
         }
-        line = null;
     }
 
     void UpdateFileLoadProgress()
@@ -750,19 +751,22 @@ public class SiplogTWO
         lock (_locker)
         {
             callLegsDisplayed.Clear();
-            //List<string[]> callLegsCopy = callLegs.ToList(); //callLegs may be modified in another thread. a copy is made so it can be searched 
             if (!string.IsNullOrEmpty(filter[0]))
             {
                 for (int i = 0; i < callLegs.Count; i++)
                 {
                     bool addcall = false;
-                    foreach (String callitem in callLegs[i])
+                    for (int j=0;j< callLegs[i].Length;j++) 
                     {
-                        foreach (String filteritem in filter)
+                        String callitem = callLegs[i][j];
+                        if (!String.IsNullOrEmpty(callitem))
                         {
-                            if (callitem.Contains(filteritem))
+                            foreach (String filteritem in filter)
                             {
-                                if (showNotify || callLegs[i][9] == methodDisplayed) { addcall = true; }
+                                if (callitem.Contains(filteritem))
+                                {
+                                    if (showNotify || callLegs[i][9] == methodDisplayed) { addcall = true; }
+                                }
                             }
                         }
                     }
