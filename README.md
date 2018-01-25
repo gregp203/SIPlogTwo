@@ -18,4 +18,4 @@ Features
 * Search SIP messages by regular expresion
 * include ports in the source and destination addresses
 
-The regex fields and "if" sequences in the "findmessages" method could be changed to match the format of the log file you are working with.
+The reges strings in the class and "if" sequences in the "ReadData" method could be changed to match the format of the log file you are working with.
