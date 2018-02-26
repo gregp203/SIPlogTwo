@@ -1,11 +1,13 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using System.Net;
 
 public class SiplogTWO
 {
@@ -143,6 +145,7 @@ public class SiplogTWO
     int flowSelectPosition;
     StreamWriter flowFileWriter;
     bool writeFlowToFile;
+    bool htmlFlowToFile;
 
     public SiplogTWO()
     {
@@ -204,12 +207,15 @@ public class SiplogTWO
         };
         callsDisplaysortIdx = 0;
         filter = new String[20];
+        writeFlowToFile = false;
+        htmlFlowToFile = false;
     }
 
     static void Main(String[] arg)
     {
         try
         {
+            string[] fileAry = new string[100];
             float version = 2f;
             string dotNetVersion = Environment.Version.ToString();
             SiplogTWO SiplogTWOObj = new SiplogTWO();
@@ -222,9 +228,9 @@ public class SiplogTWO
             Console.WriteLine(@"    \___ \  | | | ___/| |/ _ \ / _` |");
             Console.WriteLine(@"    ____) |_| |_| |   | | (_) | (_| |");
             Console.WriteLine(@"   |_____/|_____|_|   |_|\___/ \__, |");
-            Console.WriteLine(@"                                __/ |                     ");
-            Console.WriteLine(@"                               |___/                      ");
-            Console.WriteLine("   Version {0}                               Greg Palmer", version.ToString());
+            Console.WriteLine(@"                                __/ |");
+            Console.WriteLine(@"                               |___/ ");
+            Console.WriteLine("   Version {0}              Greg Palmer", version.ToString());
             if (!Regex.IsMatch(dotNetVersion, @"^4\."))
             {
                 Console.ForegroundColor = ConsoleColor.White;
@@ -240,22 +246,35 @@ public class SiplogTWO
                     Console.WriteLine("Version " + version.ToString());
                     Environment.Exit(0);
                 }
-
+                if (arg[i] == "-d")
+                {
+                    if (!string.IsNullOrEmpty(arg[i + 1]))
+                    {
+                        fileAry = Directory.GetFiles(arg[i + 1]);
+                        i++;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Missing directory parameter");
+                        Environment.Exit(1);
+                    }
+                }
+                else
+                {
+                    fileAry = arg;
+                }
             }
-
             SiplogTWOObj.displayMode = "calls";
-            Array.Sort(arg);
-            Thread FileReadThread = new Thread(() => { SiplogTWOObj.FileReader(arg); });
+            Array.Sort(fileAry);
+            Thread FileReadThread = new Thread(() => { SiplogTWOObj.FileReader(fileAry); });
             FileReadThread.Name = "File Reader Thread";
             FileReadThread.Start();
             SiplogTWOObj.CallSelect();
-
         }
         catch (Exception ex)
         {
             lock (_locker)
             {
-                
                 Console.WriteLine("\nMessage ---\n{0}", ex.Message);
                 Console.WriteLine(
                     "\nHelpLink ---\n{0}", ex.HelpLink);
@@ -294,7 +313,38 @@ public class SiplogTWO
     {
         if (writeFlowToFile)
         {
+            if (htmlFlowToFile)
+            {
+                string htmlTxtClr;
+                if (attr.ToString() == "Cyan")
+                {
+                    htmlTxtClr = "DarkTurquoise";
+                }
+                else if (attr.ToString() == "Yellow")
+                {
+                    htmlTxtClr = "GoldenRod";
+                }
+                else if (attr.ToString() == "DarkGreen")
+                {
+                    htmlTxtClr = "YellowGreen";
+                }
+                else if (attr.ToString() == "DarkCyan")
+                {
+                    htmlTxtClr = "CadetBlue";
+                }
+                else if (attr.ToString() == "Gray")
+                {
+                    htmlTxtClr = "Black";
+                }
+                else
+                {
+                    htmlTxtClr = attr.ToString();
+                }
+                flowFileWriter.Write("<code style = \"color:" + htmlTxtClr + ";\" >");
+                
+            }
             flowFileWriter.Write(line);
+            if (htmlFlowToFile) { flowFileWriter.Write("</code>"); }
         }
         else
         {
@@ -396,8 +446,10 @@ public class SiplogTWO
                     {
                         ReadData(file);
                     }
+                   
                 }
                 fileSread.Close();
+                
                 lock (_locker)
                 {
                     messages = messages.OrderBy(theDate => theDate[1]).ThenBy(Time => Time[2]).ToList();
@@ -445,82 +497,58 @@ public class SiplogTWO
                 //check to match these only once. no need match a field if it is already found
                 bool sipTwoDotOfound = false;
                 Match sipTwoDotO;
-                bool callidFound = false;
                 Match callid;
-                bool cseqFound = false;
                 Match cseq;
-                bool toFound = false;
                 Match to;
-                bool fromFound = false;
-                Match from;
-                bool SDPFopund = false;
-                bool SDPIPFound = false;
+                Match from;;
                 Match SDPIP;
-                bool mAudioFound = false;
-                bool uaservfound = false;
                 Match ua;
                 Match serv;
                 while (!beginmsgRgx.IsMatch(line)) //untill the begining of the next msg
                 {
-                    if (!sipTwoDotOfound && (sipTwoDotO = requestRgx.Match(line)) != Match.Empty)
+                    switch (line)
                     {
-                        outputarray[5] = sipTwoDotO.ToString();
-                        sipTwoDotOfound = true;
-                    }
-                    else if (!callidFound && (callid = callidRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[6] = callid.ToString().Trim();
-                        callidFound = true;
-                    } // get call-id     
-                    else if (!cseqFound && (cseq = cseqRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[17] = cseq.Groups[2].ToString();
-                        cseqFound = true;
-                    } // get call-id    
-                    else if (!toFound && (to = toRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[7] = to.Groups[1].ToString() + to.Groups[3].ToString();
-                        toFound = true;
-                    } // get to:                    
-                    else if (!fromFound && (from = fromRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[8] = from.Groups[1].ToString() + from.Groups[3].ToString();
-                        fromFound = true;
-                    } //get from                    
-                    else if (!SDPFopund && line.Contains("Content-Type: application/sdp"))
-                    {
-                        outputarray[11] = " SDP";
-                        SDPFopund = true;
-                    }
-                    else if (!SDPIPFound && (SDPIP = SDPIPRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[13] = SDPIP.ToString();
-                        SDPIPFound = true;
-                    }
-                    else if (!mAudioFound && mAudioRgx.IsMatch(line))
-                    {
-                        outputarray[14] = portRgx.Match(line).ToString().Trim();
-                        outputarray[15] = codecRgx.Match(line).ToString().Trim();
-                        if (outputarray[15] == "0") { outputarray[15] = "G711u"; }
-                        else if (outputarray[15] == "8") { outputarray[15] = "G711a"; }
-                        else if (outputarray[15] == "9") { outputarray[15] = "G722"; }
-                        else if (outputarray[15] == "18") { outputarray[15] = "G729"; }
-                        else { outputarray[15] = "rtp-payload type:" + outputarray[15]; }
-                        mAudioFound = true;
-                    }
-                    else if (!uaservfound && (ua = uaRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[16] = ua.ToString().Trim();
-                        uaservfound = true;
-                    }
-                    else if (!uaservfound && (serv = serverRgx.Match(line)) != Match.Empty)
-                    {
-                        outputarray[16] = serv.ToString().Trim();
-                        uaservfound = true;
-                    }
-                    else if (!uaservfound && occasRgx.IsMatch(line))
-                    {
-                        outputarray[16] = "occas";
+                        case string s when (sipTwoDotO = requestRgx.Match(s)) != Match.Empty:
+                            outputarray[5] = sipTwoDotO.ToString();
+                            sipTwoDotOfound = true;
+                            break;
+                        case string s when (callid = callidRgx.Match(s)) != Match.Empty:
+                            outputarray[6] = callid.ToString().Trim();
+                            break;
+                        case string s when (cseq = cseqRgx.Match(s)) != Match.Empty:
+                            outputarray[17] = cseq.Groups[2].ToString();
+                            break;
+                        case string s when (to = toRgx.Match(s)) != Match.Empty:
+                            outputarray[7] = to.Groups[1].ToString() + to.Groups[3].ToString();
+                            break;
+                        case string s when (from = fromRgx.Match(s)) != Match.Empty:
+                            outputarray[8] = from.Groups[1].ToString() + from.Groups[3].ToString();
+                            break;
+                        case string s when s.Contains("Content-Type: application/sdp"):
+                            outputarray[11] = " SDP";
+                            break;
+                        case string s when (SDPIP = SDPIPRgx.Match(s)) != Match.Empty:
+                            outputarray[13] = SDPIP.ToString();
+                            break;
+                        case string s when mAudioRgx.IsMatch(s):
+                            outputarray[14] = portRgx.Match(s).ToString().Trim();
+                            outputarray[15] = codecRgx.Match(s).ToString().Trim();
+                            if (outputarray[15] == "0") { outputarray[15] = "G711u"; }
+                            else if (outputarray[15] == "8") { outputarray[15] = "G711a"; }
+                            else if (outputarray[15] == "9") { outputarray[15] = "G722"; }
+                            else if (outputarray[15] == "18") { outputarray[15] = "G729"; }
+                            else { outputarray[15] = "rtp-payload type:" + outputarray[15]; }
+                            break;
+                        case string s when (ua = uaRgx.Match(s)) != Match.Empty:
+                            outputarray[16] = ua.ToString().Trim();
+                            break;
+                        case string s when (serv = serverRgx.Match(s)) != Match.Empty:
+                            outputarray[16] = serv.ToString().Trim();
+                            break;
+                        case string s when occasRgx.IsMatch(s):
+                            outputarray[16] = "occas";
+                            break;
+
                     }
                     line = GetNextLine();
                     if (line == null) { break; }
@@ -592,8 +620,11 @@ public class SiplogTWO
                                         {
                                             if (arrayout[9] == methodDisplayed || (showNotify && arrayout[9] == "notify"))
                                             {
-                                                CallFilter();
-                                                CallDisplay(false);
+                                                if (displayMode == "calls")
+                                                {
+                                                    CallFilter();
+                                                    CallDisplay(false);
+                                                }
                                             }
                                         }
                                     }
@@ -765,7 +796,7 @@ public class SiplogTWO
                             {
                                 if (callitem.Contains(filteritem))
                                 {
-                                    if (showNotify || callLegs[i][9] == methodDisplayed) { addcall = true; }
+                                    if ((showNotify && callLegs[i][9] == "notify") || (callLegs[i][9] == methodDisplayed)) { addcall = true; }                                     
                                 }
                             }
                         }
@@ -782,7 +813,7 @@ public class SiplogTWO
                     {
                         foreach (String filteritem in filter)
                         {
-                            if (showNotify || callLegs[i][9] == methodDisplayed) { addcall = true; }
+                            if ((showNotify && callLegs[i][9] == "notify") || (callLegs[i][9] == methodDisplayed)) { addcall = true; }
                         }
                     }
                     if (addcall) { callLegsDisplayed.Add(callLegs[i]); }
@@ -1276,7 +1307,7 @@ public class SiplogTWO
         }
     }
 
-    void MessageLine(string[] message, bool invert)
+    void MessageLine(string[] message, bool invert) // for cursor movement
     {
         //get the index of the src and dst IP
         int srcindx = IPsOfIntrest.IndexOf(message[3]);
@@ -1461,7 +1492,15 @@ public class SiplogTWO
                 string formatedStr = String.Format("{0,-10} {1,-12}", message[1], message[2].Substring(0, 11));
                 WriteConsole(formatedStr, TxtColor, BkgrdColor);
                 CallTxtColor = (AttrColor)Enum.Parse(typeof(AttrColor), message[10]);
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("<a name = \"flow" + message[0] + "\" href= \"#" + message[0] + "\">");
+                }
                 WriteConsole(displayedline + "<-", CallTxtColor, BkgrdColor);
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("</a>");
+                }
                 WriteConsole(new String(' ', 29 - (displayedline.Length + 2)) + "|", TxtColor, BkgrdColor);
                 for (int i = 2; i < IPsOfIntrest.Count; i++)
                 {
@@ -1490,7 +1529,15 @@ public class SiplogTWO
                 }
                 WriteConsole(spaceLeft, TxtColor, BkgrdColor);
                 CallTxtColor = (AttrColor)Enum.Parse(typeof(AttrColor), message[10]);
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("<a name = \"flow" + message[0] + "\" href= \"#" + message[0] + "\">");
+                }
                 WriteConsole("->" + displayedline + "<-", CallTxtColor, BkgrdColor);
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("</a>");
+                }
                 if (srcindx < IPsOfIntrest.Count - 1)
                 {
                     WriteConsole(spaceRight, TxtColor, BkgrdColor);
@@ -1533,6 +1580,10 @@ public class SiplogTWO
                 WriteConsole(space, TxtColor, BkgrdColor);
             }
             CallTxtColor = (AttrColor)Enum.Parse(typeof(AttrColor), message[10]);
+            if (htmlFlowToFile)
+            {
+                flowFileWriter.Write("<a name = \"flow" + message[0] + "\" href= \"#" + message[0] + "\">");
+            }
             if (isright) { WriteConsole("-", CallTxtColor, BkgrdColor); }
             else { WriteConsole("<", CallTxtColor, BkgrdColor); }
             string firstline = message[5].Replace("SIP/2.0 ", "");
@@ -1545,6 +1596,10 @@ public class SiplogTWO
             WriteConsole(new String('-', (int)rightline), CallTxtColor, BkgrdColor);
             if (isright) { WriteConsole(">", CallTxtColor, BkgrdColor); }
             else { WriteConsole("-", CallTxtColor, BkgrdColor); }
+            if (htmlFlowToFile)
+            {
+                flowFileWriter.Write("</a>");
+            }
             WriteConsole("|", TxtColor, BkgrdColor);
             for (int i = 0; i < IPsOfIntrest.Count - 1 - hiindx; i++)
             {
@@ -1579,7 +1634,7 @@ public class SiplogTWO
                     Console.CursorTop -= 1;
                 }
             }
-            if (keypress.Key == ConsoleKey.PageDown)
+            else if (keypress.Key == ConsoleKey.PageDown)
             {
                 if (flowSelectPosition + 40 < selectedmessages.Count - 1)
                 {
@@ -1598,7 +1653,7 @@ public class SiplogTWO
                     Console.CursorTop -= 1;
                 }
             }
-            if (keypress.Key == ConsoleKey.UpArrow)
+            else if (keypress.Key == ConsoleKey.UpArrow)
             {
                 if (flowSelectPosition > 0)
                 {
@@ -1614,7 +1669,7 @@ public class SiplogTWO
                     Console.SetCursorPosition(0, 4);
                 }
             }
-            if (keypress.Key == ConsoleKey.PageUp)
+            else if (keypress.Key == ConsoleKey.PageUp)
             {
                 if (flowSelectPosition > 39)
                 {
@@ -1638,16 +1693,16 @@ public class SiplogTWO
                     Console.SetCursorPosition(0, 4);
                 }
             }
-            if ((keypress.Key == ConsoleKey.Enter) || (keypress.Key == ConsoleKey.Spacebar))
+            else if ((keypress.Key == ConsoleKey.Enter) || (keypress.Key == ConsoleKey.Spacebar))
             {
                 DisplayMessage(flowSelectPosition, selectedmessages);
                 Flow(false);  //display call flow Diagram
             }
-            if (keypress.Key == ConsoleKey.Escape)
+            else if (keypress.Key == ConsoleKey.Escape)
             {
                 done = true;
             }
-            if (keypress.Key == ConsoleKey.D)
+            else if (keypress.Key == ConsoleKey.D)
             {
                 if (dupIP)
                 {
@@ -1660,18 +1715,18 @@ public class SiplogTWO
                 flowSelectPosition = 0;
                 Flow(false);  //display call flow Diagram
             }
-            if (keypress.Key == ConsoleKey.O)
+            else if (keypress.Key == ConsoleKey.O)
             {
                 lock (_locker)
                 {
                     Console.ForegroundColor = msgBoxTxt;
                     Console.BackgroundColor = msgBoxBkgrd;
                     int center = Math.Max(0, (int)Math.Floor((decimal)((Console.WindowWidth - 136) / 2)));
-                    Console.CursorLeft = center; Console.WriteLine(@"+-------------------------------------------------------------------+\ ");
-                    Console.CursorLeft = center; Console.WriteLine(@"| Enter the file name to the data will be writen to:                | |");
-                    Console.CursorLeft = center; Console.WriteLine(@"|                                                                   | |");
-                    Console.CursorLeft = center; Console.WriteLine(@"+-------------------------------------------------------------------+ |");
-                    Console.CursorLeft = center; Console.WriteLine(@" \___________________________________________________________________\|");
+                    Console.CursorLeft = center; Console.WriteLine(@"+---------------------------------------------------------------------------+\ ");
+                    Console.CursorLeft = center; Console.WriteLine(@"| Enter the file name to the data will be writen to (.html for html output) | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|                                                                           | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"+---------------------------------------------------------------------------+ |");
+                    Console.CursorLeft = center; Console.WriteLine(@" \___________________________________________________________________________\|");
                     Console.CursorTop -= 3;
                     Console.CursorLeft = center + 2;
                     string writeFileName = Console.ReadLine();
@@ -1688,6 +1743,7 @@ public class SiplogTWO
                     }
                     else
                     {
+                        if (Regex.IsMatch(writeFileName, @"^.*\.html$")) { htmlFlowToFile = true; }
                         try
                         {
                             // Attempt to open output file.
@@ -1699,20 +1755,104 @@ public class SiplogTWO
                             errorWriter.WriteLine(e.Message);
                         }
                         writeFlowToFile = true;
+                        if (htmlFlowToFile)
+                        {
+                            flowFileWriter.WriteLine("<!DOCTYPE html>");
+                            flowFileWriter.WriteLine("<html>");
+                            flowFileWriter.WriteLine("<head>");
+                            flowFileWriter.WriteLine("<style> a:link {text-decoration: none} </style>");
+                            flowFileWriter.WriteLine("<font face=\"Courier\" >");
+                            flowFileWriter.WriteLine("</head>");
+                            flowFileWriter.WriteLine("<body>");
+                            flowFileWriter.WriteLine("<pre>");
+                        }
                         Flow(false);  //display call flow Diagram
                         flowFileWriter.WriteLine(" ");
                         flowFileWriter.WriteLine(" ");
-                        for (int i = 0; i < selectedmessages.Count; i++)
+                        List<String> filesToRead = new List<String>();
+                        //get all the file names in a list
+                        for (int i = 0; i < selectedmessages.Count; i++) 
                         {
-                            DisplayMessage(i, selectedmessages);
+                            if (!filesToRead.Contains(selectedmessages[i][12]))
+                            {
+                                filesToRead.Add((selectedmessages[i][12]));
+                            }
                         }
+                        Console.SetCursorPosition(0, 1);
+                        Console.SetWindowPosition(0, 0);
+                        //open each filename in the list 
+                        foreach (string fileToReadName in filesToRead)
+                        {
+                            long fileLineNum = 0;
+                            long progress = 0;
+                            using (StreamReader sr = new StreamReader(fileToReadName))
+                            {
+                                 //cycle through all the seleted msg 
+                                for (int i = 0; i < selectedmessages.Count; i++)
+                                {
+                                    //find the selected messages that match the file name that is open
+                                    if (selectedmessages[i][12]== fileToReadName)
+                                    {
+                                        //advance the read position to the first line of the message
+                                        Console.Write("Seeking to line " + selectedmessages[i][0] + " in file " + Regex.Match(fileToReadName, @"^.*(\\.*)$").Groups[1].ToString());
+                                        string line = "";
+                                        for (long j = fileLineNum; j < Int32.Parse(selectedmessages[i][0]); j++)
+                                        {
+                                            progress++;
+                                            if (progress == 10000)
+                                            {
+                                                Console.Write(".");
+                                                progress = 0;
+                                            }
+                                            line = sr.ReadLine();
+                                            fileLineNum++;
+                                        }
+                                        Console.WriteLine();                                        
+                                        if (htmlFlowToFile)
+                                        {
+                                            // html tag to link to by msg start index number
+                                            flowFileWriter.Write("<a name = \"" + selectedmessages[i][0] + "\">");
+                                            flowFileWriter.WriteLine(WebUtility.HtmlEncode(line));
+                                        }
+                                        else
+                                        {
+                                            flowFileWriter.WriteLine(line);
+                                        }
+                                        // from read file to write file line of message to end index
+                                        for (long j = fileLineNum; j < Int64.Parse(selectedmessages[i][9]) - 1; j++) 
+                                        {
+                                            if (htmlFlowToFile)
+                                            {
+                                                flowFileWriter.WriteLine(WebUtility.HtmlEncode(sr.ReadLine()));
+                                            }
+                                            else
+                                            {
+                                                flowFileWriter.WriteLine(sr.ReadLine());
+                                            }
+                                            fileLineNum++;
+                                        }
+                                        if (htmlFlowToFile)
+                                        {
+                                            flowFileWriter.Write("</a>");
+                                            flowFileWriter.Write("<a href= \"#flow" + selectedmessages[i][0] + "\">Back</a>");
+                                            flowFileWriter.WriteLine("</br>");
+                                            flowFileWriter.WriteLine("<hr>");
+                                            flowFileWriter.WriteLine("</br>");
+                                        }
+                                    }
+                                }
+                                sr.Close();
+                            }
+                        }
+                        if (htmlFlowToFile)
+                        {
+                            flowFileWriter.WriteLine("</pre>");
+                            flowFileWriter.WriteLine("</body>");
+                            flowFileWriter.WriteLine("</html>");
+                        }
+                        htmlFlowToFile = false;
                         writeFlowToFile = false;
-                        flowFileWriter.Close();
-                        // Recover the standard output stream so that a 
-                        // completion message can be displayed.
-                        StreamWriter standardOutput = new StreamWriter(Console.OpenStandardOutput());
-                        standardOutput.AutoFlush = true;
-                        Console.SetOut(standardOutput);
+                        flowFileWriter.Close();                        
                     }
                     Flow(false);  //display call flow Diagram
                 }
@@ -1750,6 +1890,7 @@ public class SiplogTWO
             }
             if (writeFlowToFile)
             {
+                flowFileWriter.Write("<a name = \"" + messages[msgindxselected][0] + "\">");
                 flowFileWriter.WriteLine(line);
             }
             else
@@ -1767,6 +1908,14 @@ public class SiplogTWO
                 {
                     Console.WriteLine(sr.ReadLine());
                 }
+            }
+            if (writeFlowToFile)
+            {
+                flowFileWriter.Write("</a>");
+                flowFileWriter.Write("<a href= \"#flow" + messages[msgindxselected][0] + "\">Back</a>");
+                flowFileWriter.WriteLine("</br>");
+                flowFileWriter.WriteLine("<hr>");
+                flowFileWriter.WriteLine("</br>");
             }
             sr.Close();
         }
@@ -2059,5 +2208,5 @@ public class ConsoleBuffer
         public short Right;
         public short Bottom;
     }
+   
 }
-
