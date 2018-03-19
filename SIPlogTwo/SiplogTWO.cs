@@ -461,7 +461,7 @@ public class SiplogTWO
         {
             TopLine("Done reading all files " + string.Join(" ", filenames), 0);
             SortCalls();
-            CallDisplay(true);
+            if (displayMode == "calls") CallDisplay(true);
             Console.SetWindowPosition(0, 0);
             Console.SetCursorPosition(0, 4);
             fileReadDone = true;
@@ -620,11 +620,8 @@ public class SiplogTWO
                                         {
                                             if (arrayout[9] == methodDisplayed || (showNotify && arrayout[9] == "notify"))
                                             {
-                                                if (displayMode == "calls")
-                                                {
-                                                    CallFilter();
-                                                    CallDisplay(false);
-                                                }
+                                                CallFilter();
+                                                CallDisplay(false);
                                             }
                                         }
                                     }
@@ -915,7 +912,21 @@ public class SiplogTWO
             {
                 if (callLegsDisplayed[CallListPosition][5] == "*")
                 {
+                    int clindx = callLegs.FindIndex(
+                        delegate (string[] cl)
+                        {
+                            if (cl == callLegsDisplayed[CallListPosition])
+                            {
+                                return true;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
+                    );
                     callLegsDisplayed[CallListPosition][5] = " ";
+                    callLegs[clindx][5] = " ";
                     numSelectedCalls--;
                     Console.BackgroundColor = fieldConsoleBkgrdInvrtClr;   //change the colors of the current postion to inverted
                     Console.ForegroundColor = fieldConsoleTxtInvrtClr;
@@ -924,7 +935,21 @@ public class SiplogTWO
                 }
                 else
                 {
+                    int clindx = callLegs.FindIndex(
+                        delegate (string[] cl)
+                        {
+                            if (cl == callLegsDisplayed[CallListPosition])
+                            {
+                                return true;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
+                    );
                     callLegsDisplayed[CallListPosition][5] = "*";
+                    callLegs[clindx][5] = "*";
                     numSelectedCalls++;
                     Console.BackgroundColor = fieldConsoleBkgrdInvrtClr;   //change the colors of the current postion to inverted
                     Console.ForegroundColor = fieldConsoleTxtInvrtClr;
@@ -932,11 +957,11 @@ public class SiplogTWO
                     Console.CursorTop = Console.CursorTop - 1;
                 }
                 callIDsOfIntrest.Clear();
-                for (int i = 0; i < callLegsDisplayed.Count; i++)       //find the selected calls from the call Legs Displayed
+                for (int i = 0; i < callLegs.Count; i++)       //find the selected calls from the call Legs Displayed
                 {
-                    if (callLegsDisplayed[i][5] == "*")
+                    if (callLegs[i][5] == "*")
                     {
-                        callIDsOfIntrest.Add(callLegsDisplayed[i][4]);           //get the callIDs from the selected calls and add them to callIDsOfIntrest
+                        callIDsOfIntrest.Add(callLegs[i][4]);           //get the callIDs from the selected calls and add them to callIDsOfIntrest
                     }
                 }
             }
