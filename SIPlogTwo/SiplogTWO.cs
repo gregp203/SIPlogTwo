@@ -216,7 +216,7 @@ public class SiplogTWO
         try
         {
             string[] fileAry = new string[100];
-            float version = 2f;
+            float version = 2.1f;
             string dotNetVersion = Environment.Version.ToString();
             SiplogTWO SiplogTWOObj = new SiplogTWO();
             if (Console.BufferWidth < 200) { Console.BufferWidth = 200; }
