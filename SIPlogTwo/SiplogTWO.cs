@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using System.Net;
+using System.Globalization;
 
 public class SiplogTWO
 {
@@ -22,9 +23,10 @@ public class SiplogTWO
     string endMsgRgxStr = @"Sent:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}-\d{2}:\d{2} Recv:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}-\d{2}:\d{2}"; // for AudioCodes
     */
     string beginMsgRgxStr = @"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6}.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"; //regex to match the begining of the sip message (if it starts with a date and has time and two IP addresses)  for tcpdumpdump
-    string dateRgxStr = @"(\d{4}-\d{2}-\d{2})"; //for tcpdumpdump
+    //string dateRgxStr = @"(\d{4}-\d{2}-\d{2})"; //for tcpdumpdump
+    string dateRgxStr = @"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6}(-|\+)\d{2}:\d{2})";
     //string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})"; //for tcpdumpdump
-    string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})(-|\+)(\d{2}:\d{2})"; // group 1 is local time group 2 is + or - group 3 is TZ offset
+    //string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})(-|\+)(\d{2}:\d{2})"; // group 1 is local time group 2 is + or - group 3 is TZ offset
     string srcIpPortRgxStr = @"(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:|.)\d*(?= >)";
     string srcIpRgxStr = @"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?=(.|:)\d* >)";
     string dstIpPortRgxStr = @"(?<=> )(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:|.)\d*";
@@ -60,7 +62,10 @@ public class SiplogTWO
     Regex mAudioRgx;
     Regex occasRgx;
     Regex cseqRgx;
-    static readonly object _locker = new object();
+    //static readonly object _locker = new object();
+    static readonly object _DataLocker = new object();
+    static readonly object _QueryAgainlocker = new object();
+    static readonly object _DisplayLocker = new object();
     enum CallLegColors { Green, Cyan, Red, Magenta, Yellow, DarkGreen, DarkCyan, DarkRed, DarkMagenta };
     enum AttrColor : short { Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, Darkyellow, Gray, DarkGray, Blue, Green, Cyan, Red, Magenta, Yellow, White, }
     String[,] sortFields;
@@ -139,6 +144,8 @@ public class SiplogTWO
     int flowWidth;
     string methodDisplayed;
     string displayMode;
+    enum TZmode { local, utc, stamp };
+    TZmode timeMode;
     bool showNotify;
     int CallListPosition;
     int callsDisplaysortIdx;
@@ -153,7 +160,7 @@ public class SiplogTWO
         Regex.CacheSize = 20;
         beginmsgRgx = new Regex(beginMsgRgxStr, RegexOptions.Compiled);
         dateRgx = new Regex(dateRgxStr, RegexOptions.Compiled);
-        timeRgx = new Regex(timeRgxStr, RegexOptions.Compiled);
+        //timeRgx = new Regex(timeRgxStr, RegexOptions.Compiled);
         srcIpPortRgx = new Regex(srcIpPortRgxStr, RegexOptions.Compiled);
         srcIpRgx = new Regex(srcIpRgxStr, RegexOptions.Compiled);
         dstIpPortRgx = new Regex(dstIpPortRgxStr, RegexOptions.Compiled);
@@ -210,6 +217,7 @@ public class SiplogTWO
         filter = new String[20];
         writeFlowToFile = false;
         htmlFlowToFile = false;
+        timeMode = TZmode.local;
     }
 
     static void Main(String[] arg)
@@ -217,7 +225,7 @@ public class SiplogTWO
         try
         {
             string[] fileAry = new string[100];
-            float version = 2.1f;
+            float version = 2.2f;
             string dotNetVersion = Environment.Version.ToString();
             SiplogTWO SiplogTWOObj = new SiplogTWO();
             if (Console.BufferWidth < 200) { Console.BufferWidth = 200; }
@@ -274,7 +282,7 @@ public class SiplogTWO
         }
         catch (Exception ex)
         {
-            lock (_locker)
+            lock (_DisplayLocker)
             {
                 Console.WriteLine("\nMessage ---\n{0}", ex.Message);
                 Console.WriteLine(
@@ -289,115 +297,7 @@ public class SiplogTWO
         }
     }
 
-    void TopLine(string line, short x)
-    {
-        string displayLine;
-        if (line.Length > 1)
-        {
-            displayLine = line + new String(' ', Math.Max(Console.BufferWidth - line.Length, 0));
-        }
-        else
-        {
-            displayLine = line;
-        }
-        ConsoleBuffer.SetAttribute(x, 0, line.Length, (short)(statusBarTxtClr + (short)(((short)statusBarBkgrdClr) * 16)));
-        ConsoleBuffer.WriteAt(x, 0, displayLine);
-    }
 
-    void WriteScreen(string line, short x, short y, AttrColor attr, AttrColor bkgrd)
-    {
-        ConsoleBuffer.SetAttribute(x, y, line.Length, (short)(attr + (short)(((short)bkgrd) * 16)));
-        ConsoleBuffer.WriteAt(x, y, line);
-    }
-
-    void WriteConsole(string line, AttrColor attr, AttrColor bkgrd)
-    {
-        if (writeFlowToFile)
-        {
-            if (htmlFlowToFile)
-            {
-                string htmlTxtClr;
-                if (attr.ToString() == "Cyan")
-                {
-                    htmlTxtClr = "DarkTurquoise";
-                }
-                else if (attr.ToString() == "Yellow")
-                {
-                    htmlTxtClr = "GoldenRod";
-                }
-                else if (attr.ToString() == "DarkGreen")
-                {
-                    htmlTxtClr = "YellowGreen";
-                }
-                else if (attr.ToString() == "DarkCyan")
-                {
-                    htmlTxtClr = "CadetBlue";
-                }
-                else if (attr.ToString() == "Gray")
-                {
-                    htmlTxtClr = "Black";
-                }
-                else
-                {
-                    htmlTxtClr = attr.ToString();
-                }
-                flowFileWriter.Write("<code style = \"color:" + htmlTxtClr + ";\" >");
-                
-            }
-            flowFileWriter.Write(line);
-            if (htmlFlowToFile) { flowFileWriter.Write("</code>"); }
-        }
-        else
-        {
-            WriteScreen(line, (short)fakeCursor[0], (short)fakeCursor[1], attr, bkgrd);
-            fakeCursor[0] = fakeCursor[0] + line.Length;
-        }
-    }
-
-    void WriteLineConsole(string line, AttrColor attr, AttrColor bkgrd)
-    {
-        if (writeFlowToFile)
-        {
-            flowFileWriter.WriteLine(line);
-        }
-        else
-        {
-            WriteConsole(line + new String(' ', Console.BufferWidth - line.Length)
-            , attr, bkgrd);
-            fakeCursor[1]++;
-            fakeCursor[0] = 0;
-        }
-    }
-
-    void ClearConsole()
-    {
-        bool iswriteFlowToFileTrue = writeFlowToFile;
-        writeFlowToFile = false;
-        int[] prevFakeCursor = new int[2];
-        prevFakeCursor = fakeCursor;
-        fakeCursor[0] = 0; fakeCursor[1] = 0;
-        for (int i = 0; i < Console.BufferHeight; i++)
-        {
-            WriteLineConsole("", fieldAttrTxtClr, fieldAttrBkgrdClr);
-        }
-        fakeCursor = prevFakeCursor;
-        writeFlowToFile = iswriteFlowToFileTrue;
-    }
-
-    void ClearConsoleNoTop()
-    {
-        bool iswriteFlowToFileTrue = writeFlowToFile;
-        writeFlowToFile = false;
-        int[] prevFakeCursor = new int[2];
-        prevFakeCursor = fakeCursor;
-        fakeCursor[0] = 0; fakeCursor[1] = 1;
-        for (int i = 0; i < Console.BufferHeight; i++)
-        {
-            WriteLineConsole("", fieldAttrTxtClr, fieldAttrBkgrdClr);
-        }
-        fakeCursor = prevFakeCursor;
-        writeFlowToFile = iswriteFlowToFileTrue;
-    }
 
     void FileReader(string[] filenames)
     {
@@ -450,15 +350,10 @@ public class SiplogTWO
                    
                 }
                 fileSread.Close();
-                
-                lock (_locker)
-                {
-                    messages = messages.OrderBy(theDate => theDate[1]).ThenBy(Time => Time[2]).ToList();
-                }
-
+                lock (_DataLocker) SortCalls();
             }
         }
-        lock (_locker)
+        lock (_DisplayLocker)
         {
             TopLine("Done reading all files " + string.Join(" ", filenames), 0);
             SortCalls();
@@ -488,7 +383,8 @@ public class SiplogTWO
                 // get the index of the start of the msg
                 outputarray[0] = currentFileLoadProg.ToString();
                 outputarray[1] = dateRgx.Match(line).ToString();    //date  
-                outputarray[2] = timeRgx.Match(line).ToString();     //time
+                //outputarray[2] = timeRgx.Match(line).ToString();     //time
+                outputarray[2] = DateTime.Parse(dateRgx.Match(line).ToString()).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
                 if (IncludePorts) { outputarray[3] = srcIpPortRgx.Match(line).ToString(); }
                 else { outputarray[3] = srcIpRgx.Match(line).ToString(); }                               //src IP                                                                        
                 if (IncludePorts) { outputarray[4] = dstIpPortRgx.Match(line).ToString(); }
@@ -561,15 +457,13 @@ public class SiplogTWO
                 if (outputarray[5] == null) { outputarray[5] = "Invalid SIP characters"; }
                 if (sipTwoDotOfound)
                 {
-                    lock (_locker)
-                    {
-                        messages.Add(outputarray);
-                    }
+                    
+                    lock (_DataLocker) messages.Add(outputarray);
                     if (displayMode == "flow")
                     {
                         if (callIDsOfIntrest.Contains(outputarray[6]))
                         {
-                            Flow(true);
+                            lock (_DisplayLocker) Flow(true);
                         }
                     }
                     bool getcallid = false;
@@ -599,8 +493,8 @@ public class SiplogTWO
                             {
                                 // copy from msg input to arrayout
                                 String[] arrayout = new String[10];
-                                arrayout[0] = outputarray[1];//  date [0]
-                                arrayout[1] = outputarray[2];//  time [1]
+                                arrayout[0] = outputarray[1];//  Time date stamp [0]
+                                arrayout[1] = outputarray[2];//  UTC [1]
                                 arrayout[2] = outputarray[7];//  To: [2]
                                 arrayout[3] = outputarray[8];//  From: [3]
                                 arrayout[4] = outputarray[6];//  Call-ID [4]
@@ -614,18 +508,36 @@ public class SiplogTWO
                                 else if (outputarray[5].Contains("SUBSCRIBE")) { arrayout[9] = "subscribe"; subscriptions++; }
                                 if (outputarray[6] != null)
                                 {
-                                    lock (_locker)
+                                    
+                                    lock (_DataLocker) callLegs.Add(arrayout);
+                                    lock (_DisplayLocker) if (displayMode == "calls") // displayMode CallFilter methodDisplayed showNotify CallDisplay() touched by another thread
                                     {
-                                        callLegs.Add(arrayout);
-                                        if (displayMode == "calls")
+                                        if (arrayout[9] == methodDisplayed || (showNotify && arrayout[9] == "notify"))
                                         {
-                                            if (arrayout[9] == methodDisplayed || (showNotify && arrayout[9] == "notify"))
+                                            if (string.IsNullOrEmpty(filter[0]))
                                             {
                                                 CallFilter();
                                                 CallDisplay(false);
                                             }
+                                            else
+                                            {
+                                                bool arrayContainsFilteredItem = false;
+                                                foreach (String filteritem in filter)
+                                                {
+                                                    if (arrayout.Contains(filteritem))
+                                                    {
+                                                        arrayContainsFilteredItem = true;
+                                                    }
+                                                }
+                                                if (arrayContainsFilteredItem)
+                                                {
+                                                    CallFilter();
+                                                    CallDisplay(false);
+                                                }
+                                            }
                                         }
                                     }
+
                                 }
                             }
                         }
@@ -646,65 +558,85 @@ public class SiplogTWO
         {
             short x;
             x = (short)(currentFileLoadProg / 20000);
-            lock (_locker) { TopLine("!", (short)(x - 1)); }
+            lock (_DisplayLocker) { TopLine("!", (short)(x - 1)); }
         }
     }
 
     void CallDisplay(bool newFullScreen)
     {
-        Console.WindowWidth = Math.Min(161, Console.LargestWindowWidth);
-        Console.WindowHeight = Math.Min(44, Console.LargestWindowHeight);
-        Console.BufferWidth = 200;
-        Console.BufferHeight = Math.Max(10 + callLegsDisplayed.Count, Console.BufferHeight);
-        //if the following conditions true , just add the calls to the bottom of the screen without redrawing
-        if (!newFullScreen && !filterChange && callLegsDisplayedCountPrev != 0 && callLegsDisplayed.Count > callLegsDisplayedCountPrev)
+        lock (_DisplayLocker)
         {
-            for (int i = callLegsDisplayedCountPrev; i < callLegsDisplayed.Count; i++)
+            Console.WindowWidth = Math.Min(161, Console.LargestWindowWidth);
+            Console.WindowHeight = Math.Min(44, Console.LargestWindowHeight);
+            Console.BufferWidth = 200;
+            Console.BufferHeight = Math.Max(10 + callLegsDisplayed.Count, Console.BufferHeight);
+            //if the following conditions true , just add the calls to the bottom of the screen without redrawing
+            if (!newFullScreen && !filterChange && callLegsDisplayedCountPrev != 0 && callLegsDisplayed.Count > callLegsDisplayedCountPrev)
             {
-                WriteScreenCallLine(callLegsDisplayed[i], i);
-            }
-        }
-        else
-        {
-            filterChange = false;
-            callLegsDisplayedCountPrev = callLegsDisplayed.Count;
-            ClearConsoleNoTop();
-            fakeCursor[0] = 0; fakeCursor[1] = 1;
-            WriteConsole("[Spacebar]-select calls [Enter]-for call flow [F]-filter [Q]-query all SIP msgs [Esc]-quit [N]-toggle NOTIFYs [O]-OPTIONs ", headerTxtClr, headerBkgrdClr);
-            if (methodDisplayed == "invite") { WriteConsole("[R]-registrations [S]-subscriptions", headerTxtClr, headerBkgrdClr); }
-            if (methodDisplayed == "register") { WriteConsole("[I]-invites/calls [S]-subscriptions", headerTxtClr, headerBkgrdClr); }
-            if (methodDisplayed == "subscribe") { WriteConsole("[I]-invites/calls [R]-registrations", headerTxtClr, headerBkgrdClr); }
-            WriteLineConsole(" ", headerTxtClr, headerBkgrdClr); 
-            String formatedStr = String.Format("{0,-2} {1,-6} {2,-10} {3,-12} {4,-30} {5,-30} {6,-16} {7,-16}", "*", "index", "date", "time", "from:", "to:", "src IP", "dst IP");
-            WriteLineConsole(formatedStr, headerTxtClr, headerBkgrdClr);
-            if (methodDisplayed == "invite") { WriteConsole("----invites/calls---", headerTxtClr, headerBkgrdClr); }
-            if (methodDisplayed == "register") { WriteConsole("----registrations---", headerTxtClr, headerBkgrdClr); }
-            if (methodDisplayed == "subscribe") { WriteConsole("----subscriptions---", headerTxtClr, headerBkgrdClr); }
-            WriteLineConsole(new String('-', 140), headerTxtClr, headerBkgrdClr);
-            if (callLegsDisplayed.Count > 0)
-            {
-                for (int i = 0; i < callLegsDisplayed.Count; i++)
+                for (int i = callLegsDisplayedCountPrev; i < callLegsDisplayed.Count; i++)
                 {
                     WriteScreenCallLine(callLegsDisplayed[i], i);
                 }
             }
-            WriteScreen(sortFields[callsDisplaysortIdx, 0], Int16.Parse(sortFields[callsDisplaysortIdx, 1]), 2, sortTxtdClr, sortBkgrdClr);
-        }
-        string footerOne = "Number of SIP messages found : " + messages.Count.ToString();
-        string footerTwo = "Number of SIP transactions found : " + callLegs.Count.ToString();
-        string footerThree = CallInvites.ToString() + " SIP INVITEs found | " + notifications.ToString() + " SIP NOTIFYs found | " + registrations.ToString() + " SIP REGISTERs found | " + subscriptions.ToString() + " SIP SUBSCRIBEs found";
-        WriteScreen(footerOne + new String(' ', Console.BufferWidth - footerOne.Length), 0, (short)(callLegsDisplayed.Count + 4), footerTxtClr, footerBkgrdClr);
-        WriteScreen(footerTwo + new String(' ', Console.BufferWidth - footerTwo.Length), 0, (short)(callLegsDisplayed.Count + 5), footerTxtClr, footerBkgrdClr);
-        WriteScreen(footerThree + new String(' ', Console.BufferWidth - footerThree.Length), 0, (short)(callLegsDisplayed.Count + 6), footerTxtClr, footerBkgrdClr);
-        if (callLegsDisplayed.Count > 0)
-        {
-            Console.SetCursorPosition(0, CallListPosition + 4);
-            Console.BackgroundColor = fieldConsoleTxtClr;
-            Console.ForegroundColor = fieldConsoleBkgrdClr;
-            CallLine(callLegsDisplayed[CallListPosition], CallListPosition);
-            Console.SetCursorPosition(0, CallListPosition + 4);
-            Console.BackgroundColor = fieldConsoleBkgrdClr;
-            Console.ForegroundColor = fieldConsoleTxtClr;
+            else
+            {
+                string timeString = "";
+                switch (timeMode)
+                {
+                    case TZmode.local:
+                        {
+                            timeString = "Local Time";
+                            break;
+                        }
+                    case TZmode.utc:
+                        {
+                            timeString = "UTC Time";
+                            break;
+                        }
+                    case TZmode.stamp:
+                        {
+                            timeString = "Time Stamp";
+                            break;
+                        }
+                }
+                sortFields[0, 0] = timeString;
+                filterChange = false;
+                callLegsDisplayedCountPrev = callLegsDisplayed.Count;
+                ClearConsoleNoTop();
+                fakeCursor[0] = 0; fakeCursor[1] = 1;
+                WriteConsole("[Spacebar]-select calls [Enter]-for call flow [F]-filter [H]-help [Esc]-quit", headerTxtClr, headerBkgrdClr);                
+                WriteLineConsole(" ", headerTxtClr, headerBkgrdClr);
+                String formatedStr = String.Format("{0,-2} {1,-6} {2,-10} {3,-12} {4,-30} {5,-30} {6,-16} {7,-16}", "*", "index", "date", timeString, "from:", "to:", "src IP", "dst IP");
+                WriteLineConsole(formatedStr, headerTxtClr, headerBkgrdClr);
+                if (methodDisplayed == "invite") { WriteConsole("----invites/calls---", headerTxtClr, headerBkgrdClr); }
+                if (methodDisplayed == "register") { WriteConsole("----registrations---", headerTxtClr, headerBkgrdClr); }
+                if (methodDisplayed == "subscribe") { WriteConsole("----subscriptions---", headerTxtClr, headerBkgrdClr); }
+                WriteLineConsole(new String('-', 140), headerTxtClr, headerBkgrdClr);
+                if (callLegsDisplayed.Count > 0)
+                {
+                    for (int i = 0; i < callLegsDisplayed.Count; i++)
+                    {
+                        WriteScreenCallLine(callLegsDisplayed[i], i);
+                    }
+                }
+                WriteScreen(sortFields[callsDisplaysortIdx, 0], Int16.Parse(sortFields[callsDisplaysortIdx, 1]), 2, sortTxtdClr, sortBkgrdClr);
+            }
+            string footerOne = "Number of SIP messages found : " + messages.Count.ToString();
+            string footerTwo = "Number of SIP transactions found : " + callLegs.Count.ToString();
+            string footerThree = CallInvites.ToString() + " SIP INVITEs found | " + notifications.ToString() + " SIP NOTIFYs found | " + registrations.ToString() + " SIP REGISTERs found | " + subscriptions.ToString() + " SIP SUBSCRIBEs found";
+            WriteScreen(footerOne + new String(' ', Console.BufferWidth - footerOne.Length), 0, (short)(callLegsDisplayed.Count + 4), footerTxtClr, footerBkgrdClr);
+            WriteScreen(footerTwo + new String(' ', Console.BufferWidth - footerTwo.Length), 0, (short)(callLegsDisplayed.Count + 5), footerTxtClr, footerBkgrdClr);
+            WriteScreen(footerThree + new String(' ', Console.BufferWidth - footerThree.Length), 0, (short)(callLegsDisplayed.Count + 6), footerTxtClr, footerBkgrdClr);
+            if (callLegsDisplayed.Count > 0)
+            {
+                Console.SetCursorPosition(0, CallListPosition + 4);
+                Console.BackgroundColor = fieldConsoleTxtClr;
+                Console.ForegroundColor = fieldConsoleBkgrdClr;
+                CallLine(callLegsDisplayed[CallListPosition], CallListPosition);
+                Console.SetCursorPosition(0, CallListPosition + 4);
+                Console.BackgroundColor = fieldConsoleBkgrdClr;
+                Console.ForegroundColor = fieldConsoleTxtClr;
+            }
         }
     }
 
@@ -716,11 +648,34 @@ public class SiplogTWO
             {
                 Console.ForegroundColor = fieldConsoleSelectClr;
             }
+            string dateString = "";
+            string timeString = "";
+            switch (timeMode)
+            {
+                case TZmode.local:
+                    {
+                        dateString = DateTime.Parse(InputCallLegs[1]).ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        timeString = DateTime.Parse(InputCallLegs[1]).ToLocalTime().ToString("HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                        break;
+                    }
+                case TZmode.utc:
+                    {
+                        dateString = DateTime.Parse(InputCallLegs[1]).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        timeString = DateTime.Parse(InputCallLegs[1]).ToString("HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                        break;
+                    }
+                case TZmode.stamp:
+                    {
+                        dateString = DateTime.Parse(InputCallLegs[0]).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        timeString = DateTime.Parse(InputCallLegs[0]).ToString("HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                        break;
+                    }
+            }
             Console.WriteLine("{0,-2} {1,-6} {2,-10} {3,-12} {5,-30} {4,-30} {6,-16} {7,-17}"
                 , InputCallLegs[5]
                 , indx
-                , InputCallLegs[0]
-                , ((InputCallLegs[1]).Substring(0, 11)) ?? String.Empty
+                , dateString
+                , timeString
                 , InputCallLegs[2]
                 , InputCallLegs[3]
                 , InputCallLegs[6]
@@ -762,11 +717,34 @@ public class SiplogTWO
                     bkgrdColor = fieldAttrBkgrdClr;
                 }
             }
+            string dateString = "";
+            string timeString = "";
+            switch (timeMode)
+            {
+                case TZmode.local:
+                    {
+                        dateString = DateTime.Parse(callLeg[1]).ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        timeString = DateTime.Parse(callLeg[1]).ToLocalTime().ToString("HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                        break;
+                    }
+                case TZmode.utc:
+                    {
+                        dateString = DateTime.Parse(callLeg[1]).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        timeString = DateTime.Parse(callLeg[1]).ToString("HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                        break;
+                    }
+                case TZmode.stamp:
+                    {
+                        dateString = DateTime.Parse(callLeg[0]).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        timeString = DateTime.Parse(callLeg[0]).ToString("HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                        break;
+                    }
+            }
             string formatedStr = String.Format("{0,-2} {1,-6} {2,-10} {3,-12} {5,-30} {4,-30} {6,-16} {7,-17}"
                 , callLeg[5]
                 , indx
-                , callLeg[0]
-                , callLeg[1].Substring(0, 11)
+                , dateString
+                , timeString
                 , callLeg[2]
                 , callLeg[3]
                 , callLeg[6]
@@ -777,7 +755,7 @@ public class SiplogTWO
 
     void CallFilter()
     {
-        lock (_locker)
+        lock (_DataLocker)
         {
             callLegsDisplayed.Clear();
             if (!string.IsNullOrEmpty(filter[0]))
@@ -822,7 +800,7 @@ public class SiplogTWO
 
     void MoveCursor(bool up, int amount)
     {
-        lock (_locker)
+        lock (_DataLocker)
         {
             Console.BackgroundColor = fieldConsoleBkgrdClr;  //change the colors of the current postion to normal
             Console.ForegroundColor = fieldConsoleTxtClr;
@@ -849,18 +827,11 @@ public class SiplogTWO
     void CallSelect()
     {
         bool done = false;
-        CallListPosition = 0;
-
-        lock (_locker)
-        {
-            while (!(displayMode == "calls"))
-            {
-                Monitor.Wait(_locker);
-            }
-            CallDisplay(true);
-            Console.SetCursorPosition(0, 4);
-            Console.SetWindowPosition(0, 0);
-        }
+        CallListPosition = 0;        
+        CallDisplay(true);
+        Console.SetCursorPosition(0, 4);
+        Console.SetWindowPosition(0, 0);
+        
         ConsoleKeyInfo keypressed;
         while (done == false)
         {
@@ -902,7 +873,7 @@ public class SiplogTWO
                 }
                 else
                 {
-                    MoveCursor(true, CallListPosition);
+                    if (callLegsDisplayed.Count > 0) MoveCursor(true, CallListPosition);
                 }
                 if (CallListPosition == 0)
                 {
@@ -950,15 +921,15 @@ public class SiplogTWO
                         }
                     );
                     callLegsDisplayed[CallListPosition][5] = "*";
-                    callLegs[clindx][5] = "*";
+                    lock (_DataLocker) callLegs[clindx][5] = "*";
                     numSelectedCalls++;
                     Console.BackgroundColor = fieldConsoleBkgrdInvrtClr;   //change the colors of the current postion to inverted
                     Console.ForegroundColor = fieldConsoleTxtInvrtClr;
                     CallLine(callLegsDisplayed[CallListPosition], CallListPosition);
                     Console.CursorTop = Console.CursorTop - 1;
                 }
-                callIDsOfIntrest.Clear();
-                for (int i = 0; i < callLegs.Count; i++)       //find the selected calls from the call Legs Displayed
+                lock (_DataLocker) callIDsOfIntrest.Clear();
+                lock (_DataLocker) for (int i = 0; i < callLegs.Count; i++)       //find the selected calls from the call Legs Displayed
                 {
                     if (callLegs[i][5] == "*")
                     {
@@ -968,11 +939,11 @@ public class SiplogTWO
             }
             if (numSelectedCalls > 0 && keypressed.Key == ConsoleKey.Enter)
             {
-                displayMode = "flow";
+                lock (_DisplayLocker) displayMode = "flow";
                 FlowSelect();   //select SIP message from the call flow diagram                        
                 filterChange = true;
                 CallFilter();
-                displayMode = "calls";
+                lock (_DisplayLocker) displayMode = "calls";
                 if (fileReadDone)
                 {
                     SortCalls();
@@ -982,7 +953,7 @@ public class SiplogTWO
             }
             if (keypressed.Key == ConsoleKey.Escape)
             {
-                lock (_locker)
+                lock (_DisplayLocker)
                 {
                     Console.ForegroundColor = msgBoxTxt;
                     Console.BackgroundColor = msgBoxBkgrd;
@@ -1012,32 +983,74 @@ public class SiplogTWO
                         }
                 }
             }
-            if (keypressed.Key == ConsoleKey.Q)
+
+            if (keypressed.Key == ConsoleKey.H)
             {
-                do
+                lock (_DisplayLocker)
                 {
-                    displayMode = "messages";
-                    ListAllMsg(null);
                     Console.ForegroundColor = msgBoxTxt;
                     Console.BackgroundColor = msgBoxBkgrd;
                     int center = Math.Max(0, (int)Math.Floor((decimal)((Console.WindowWidth - 71) / 2)));
                     Console.CursorLeft = center; Console.WriteLine(@"+-------------------------------------------------------------------+\ ");
-                    Console.CursorLeft = center; Console.WriteLine(@"|  Press any key to query SIP messages again or press [esc] to quit | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Key                                                              | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Down Arrow / Page Down ------------------------ move cursor down | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Up Arrow / Page Up ------------------------------ move cursor up | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Left Arrow / Right Arrow --------------------- change sort order | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Spacebar ------------------------------------ select call leg(s) | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Enter -------------------------------- Show diagram of call flow | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Esc --------------------------------------- Exit the application | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  H --------------------------------------------- This help dialog | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  M -------------------------------------- Search all SIP messages | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Q ------------------------------------------- Query splunk again | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  C ------------------------------------- Write configuration file | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  F ----------------------------------- Filter the displayed calls | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  N ------------------------------------ Toggle display of NOTIFYs | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  O ------------------- Search Option Messages and 200 OK response | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  R ------------------------------------------- Show registrations | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  S ------------------------------------------ Show subscritptions | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  I -------------------------------------- Show calls with INTIVES | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  T -- Toggle time zone displyed: local, UTC, timestamp of the log | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|                                                                   | |");
                     Console.CursorLeft = center; Console.WriteLine(@"+-------------------------------------------------------------------+ |");
                     Console.CursorLeft = center; Console.WriteLine(@" \___________________________________________________________________\|");
                     Console.BackgroundColor = fieldConsoleBkgrdClr;  //change the colors of the current postion to normal
                     Console.ForegroundColor = fieldConsoleTxtClr;
-                } while (Console.ReadKey(true).Key != ConsoleKey.Escape);
-                filterChange = true;
-                CallFilter();
-                if (fileReadDone) { SortCalls(); }
-                Console.SetWindowPosition(0, Math.Max(0, Console.CursorTop - Console.WindowHeight));
-                CallDisplay(true);
-                displayMode = "calls";
+                    Console.ReadKey(true);
+                    filterChange = true;
+                    CallFilter();
+                    Console.SetWindowPosition(0, Math.Max(0, Console.CursorTop - Console.WindowHeight));
+                    CallDisplay(true);
+                }
+            }
+            if (keypressed.Key == ConsoleKey.Q)
+            {
+                lock (_DisplayLocker)
+                {
+                    do
+                    {
+                        displayMode = "messages";
+                        ListAllMsg(null);
+                        Console.ForegroundColor = msgBoxTxt;
+                        Console.BackgroundColor = msgBoxBkgrd;
+                        int center = Math.Max(0, (int)Math.Floor((decimal)((Console.WindowWidth - 71) / 2)));
+                        Console.CursorLeft = center; Console.WriteLine(@"+-------------------------------------------------------------------+\ ");
+                        Console.CursorLeft = center; Console.WriteLine(@"|  Press any key to query SIP messages again or press [esc] to quit | |");
+                        Console.CursorLeft = center; Console.WriteLine(@"+-------------------------------------------------------------------+ |");
+                        Console.CursorLeft = center; Console.WriteLine(@" \___________________________________________________________________\|");
+                        Console.BackgroundColor = fieldConsoleBkgrdClr;  //change the colors of the current postion to normal
+                        Console.ForegroundColor = fieldConsoleTxtClr;
+                    } while (Console.ReadKey(true).Key != ConsoleKey.Escape);
+                    filterChange = true;
+                    CallFilter();
+                    if (fileReadDone) { SortCalls(); }
+                    Console.SetWindowPosition(0, Math.Max(0, Console.CursorTop - Console.WindowHeight));
+                    CallDisplay(true);
+                    displayMode = "calls";
+                }
             }
             if (keypressed.Key == ConsoleKey.F)
             {
-                lock (_locker)
+                lock (_DisplayLocker)
                 {
                     filterChange = true;
                     Console.ForegroundColor = msgBoxTxt;
@@ -1064,17 +1077,28 @@ public class SiplogTWO
             if (keypressed.Key == ConsoleKey.N)
             {
                 CallListPosition = 0;
-                if (showNotify == false) { showNotify = true; } else { showNotify = false; }
+                lock (_DisplayLocker) if (showNotify == false) { showNotify = true; } else { showNotify = false; }
                 filterChange = true;
                 CallFilter();
                 if (fileReadDone) { SortCalls(); }
                 Console.SetWindowPosition(0, Math.Max(0, Console.CursorTop - Console.WindowHeight));
                 CallDisplay(true);
             }
-            
+            if (keypressed.Key == ConsoleKey.T)
+            {
+                if (timeMode == TZmode.stamp)
+                {
+                    timeMode = TZmode.local;
+                }
+                else
+                {
+                    timeMode++;
+                }
+                CallDisplay(true);
+            }
             if (keypressed.Key == ConsoleKey.O)
             {
-                lock (_locker)
+                lock (_DisplayLocker)
                 {
                     Console.ForegroundColor = msgBoxTxt;
                     Console.BackgroundColor = msgBoxBkgrd;
@@ -1116,7 +1140,7 @@ public class SiplogTWO
             {
                 string prevMethod = methodDisplayed;
                 filterChange = true;
-                methodDisplayed = "register";
+                lock (_DisplayLocker) methodDisplayed = "register";
                 ClearSelectedCalls();
                 numSelectedCalls = 0;
                 CallListPosition = 0;
@@ -1132,7 +1156,7 @@ public class SiplogTWO
                 filterChange = true;
                 ClearSelectedCalls();
                 numSelectedCalls = 0;
-                methodDisplayed = "subscribe";
+                lock (_DisplayLocker) methodDisplayed = "subscribe";
                 CallListPosition = 0;
                 CallFilter();
                 if (fileReadDone) { SortCalls(); }
@@ -1144,7 +1168,7 @@ public class SiplogTWO
             {
                 string prevMethod = methodDisplayed;
                 filterChange = true;
-                methodDisplayed = "invite";
+                lock (_DisplayLocker) methodDisplayed = "invite";
                 numSelectedCalls = 0;
                 ClearSelectedCalls();
                 CallListPosition = 0;
@@ -1187,7 +1211,7 @@ public class SiplogTWO
     {
         if (callsDisplaysortIdx == 0)
         {
-            callLegsDisplayed = callLegsDisplayed.OrderBy(theDate => theDate[0]).ThenBy(Time => Time[1]).ToList();
+            callLegsDisplayed = callLegsDisplayed.OrderBy(UTC => UTC[1]).ToList();
             CallListPosition = 0;
         }
         else
@@ -1206,36 +1230,33 @@ public class SiplogTWO
     }
 
     void SelectMessages()
-    {
-        lock (_locker)
+    {        
+        selectedmessages.Clear();
+        lock (_DataLocker) for (int i = 0; i < messages.Count; i++)                //find messages that contain the selected callid
         {
-            selectedmessages.Clear();
-            for (int i = 0; i < messages.Count; i++)                //find messages that contain the selected callid
+            if (callIDsOfIntrest.Contains(messages[i][6]))
             {
-                if (callIDsOfIntrest.Contains(messages[i][6]))
+                if (messages[i][3] != messages[i][4])
                 {
-                    if (messages[i][3] != messages[i][4])
-                    {
-                        selectedmessages.Add(messages[i]);
-                    }
-                    else if (dupIP)
-                    {
-                        selectedmessages.Add(messages[i]);
-                    }
+                    selectedmessages.Add(messages[i]);
+                }
+                else if (dupIP)
+                {
+                    selectedmessages.Add(messages[i]);
                 }
             }
-            CallLegColors callcolor = CallLegColors.Green;
-            foreach (string cid in callIDsOfIntrest)                         //get all the messages with the callIDs fro tmhe selected call Legs
+        }
+        CallLegColors callcolor = CallLegColors.Green;
+        lock (_DataLocker) foreach (string cid in callIDsOfIntrest)                         //get all the messages with the callIDs fro tmhe selected call Legs
+        {
+            for (int i = 0; i < selectedmessages.Count; i++)
             {
-                for (int i = 0; i < selectedmessages.Count; i++)
+                if (cid == selectedmessages[i][6])
                 {
-                    if (cid == selectedmessages[i][6])
-                    {
-                        selectedmessages[i][10] = callcolor.ToString();     //set color to display the call leg in the flow color for each call id
-                    }
+                    selectedmessages[i][10] = callcolor.ToString();     //set color to display the call leg in the flow color for each call id
                 }
-                if (callcolor == CallLegColors.DarkMagenta) { callcolor = CallLegColors.Green; } else { callcolor++; }
             }
+            if (callcolor == CallLegColors.DarkMagenta) { callcolor = CallLegColors.Green; } else { callcolor++; }
         }
     }
 
@@ -1261,7 +1282,7 @@ public class SiplogTWO
 
     void Flow(bool liveUpdate)
     {
-        lock (_locker)
+        lock (_DisplayLocker)
         {
             SelectMessages();
             GetIps();              //get the IP addresses of the selected SIP messages for the top of the screen  and addedto the IPsOfIntrest 
@@ -1293,12 +1314,19 @@ public class SiplogTWO
                     Console.BufferHeight = Math.Max(Math.Min(10 + selectedmessages.Count, Int16.MaxValue - 1), Console.BufferHeight);
                 }
                 flowWidth = 24;
-                if (htmlFlowToFile)
+                if (writeFlowToFile)
                 {
-                    flowFileWriter.Write("<div class=\"hosts\">");
-                    flowFileWriter.Write("<br>");
+                    if (htmlFlowToFile)
+                    {
+                        flowFileWriter.Write("<div class=\"hosts\">");
+                        flowFileWriter.Write("<br>");
+                    }
+                    WriteConsole(new String(' ', 17), fieldAttrTxtClr, fieldAttrBkgrdClr);
                 }
-                WriteConsole(new String(' ', 17), fieldAttrTxtClr, fieldAttrBkgrdClr);
+                else
+                {
+                    WriteConsole("[H]-Help" + new String(' ', 9), fieldAttrTxtClr, fieldAttrBkgrdClr);
+                }
                 foreach (string ip in IPsOfIntrest)
                 {
                     flowWidth = flowWidth + 29;
@@ -1309,7 +1337,27 @@ public class SiplogTWO
                     WriteConsole(ip + new String(' ', 29 - ip.Length), fieldAttrTxtClr, fieldAttrBkgrdClr);
                 }
                 WriteLineConsole("", fieldAttrTxtClr, fieldAttrBkgrdClr);
-                WriteConsole(new String(' ', 17), fieldAttrTxtClr, fieldAttrBkgrdClr);
+                string timeModeString = "";
+                switch (timeMode)
+                {
+                    case TZmode.local:
+                        {
+                            timeModeString = "Local Time";
+
+                            break;
+                        }
+                    case TZmode.utc:
+                        {
+                            timeModeString = "UTC Time  ";
+                            break;
+                        }
+                    case TZmode.stamp:
+                        {
+                            timeModeString = "Time Stamp";
+                            break;
+                        }
+                }
+                WriteConsole(timeModeString + new String(' ', 7), fieldAttrTxtClr, fieldAttrBkgrdClr);
                 foreach (string ip in IPsOfIntrest)
                 {
                     string ua = "";
@@ -1354,6 +1402,25 @@ public class SiplogTWO
         bool isright = false;
         int lowindx = 0;
         int hiindx = 0;
+        string dateTimeString = "";
+        switch (timeMode)
+        {
+            case TZmode.local:
+                {
+                    dateTimeString = DateTime.Parse(message[2]).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                    break;
+                }
+            case TZmode.utc:
+                {
+                    dateTimeString = DateTime.Parse(message[2]).ToString("yyyy-MM-dd HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                    break;
+                }
+            case TZmode.stamp:
+                {
+                    dateTimeString = DateTime.Parse(message[1]).ToString("yyyy-MM-dd HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                    break;
+                }
+        }
         if (srcindx == dstindx)
         {
             string firstline = message[5].Replace("SIP/2.0 ", "");
@@ -1372,7 +1439,7 @@ public class SiplogTWO
                     Console.BackgroundColor = fieldConsoleBkgrdClr;
                     Console.ForegroundColor = fieldConsoleTxtClr;
                 }
-                Console.Write("{0,-10} {1,-12}", message[1], message[2].Substring(0, 11));
+                Console.Write("{0,-10}", dateTimeString);
                 Console.ForegroundColor = (ConsoleColor)Enum.Parse(typeof(ConsoleColor), message[10]);
                 Console.Write(displayedline + "<-");
                 if (invert)
@@ -1394,7 +1461,7 @@ public class SiplogTWO
             else
             {
                 string spaceLeft = new String(' ', 26 - (int)(Math.Floor((decimal)(displayedline.Length / 2))));
-                string spaceRight = new String(' ', 27 - (int)(Math.Ceiling((decimal)(displayedline.Length / 2)))) + "|";
+                string spaceRight = new String(' ', 53 - spaceLeft.Length - displayedline.Length) + "|";
                 if (invert)
                 {
                     Console.BackgroundColor = fieldConsoleBkgrdInvrtClr;
@@ -1405,7 +1472,7 @@ public class SiplogTWO
                     Console.BackgroundColor = fieldConsoleBkgrdClr;
                     Console.ForegroundColor = fieldConsoleTxtClr;
                 }
-                Console.Write("{0,-10} {1,-12}|", message[1], message[2].Substring(0, 11));
+                Console.Write("{0,-10}|", dateTimeString);
                 for (int i = 0; i < srcindx - 1; i++)
                 {
                     Console.Write(space);
@@ -1458,7 +1525,7 @@ public class SiplogTWO
                 Console.BackgroundColor = fieldConsoleBkgrdClr;
                 Console.ForegroundColor = fieldConsoleTxtClr;
             }
-            Console.Write("{0,-10} {1,-12}|", message[1], message[2].Substring(0, 11));
+            Console.Write("{0,-10}|", dateTimeString);
             for (int i = 0; i < lowindx; i++)
             {
                 Console.Write(space);
@@ -1510,6 +1577,25 @@ public class SiplogTWO
         bool isright = false;
         int lowindx = 0;
         int hiindx = 0;
+        string dateTimeString = "";
+        switch (timeMode)
+        {
+            case TZmode.local:
+                {
+                    dateTimeString = DateTime.Parse(message[2]).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                    break;
+                }
+            case TZmode.utc:
+                {
+                    dateTimeString = DateTime.Parse(message[2]).ToString("yyyy-MM-dd HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                    break;
+                }
+            case TZmode.stamp:
+                {
+                    dateTimeString = DateTime.Parse(message[1]).ToString("yyyy-MM-dd HH:mm:ss.ff", CultureInfo.InvariantCulture);
+                    break;
+                }
+        }
         if (srcindx == dstindx)
         {
             string firstline = message[5].Replace("SIP/2.0 ", "");
@@ -1528,7 +1614,7 @@ public class SiplogTWO
                     TxtColor = fieldAttrTxtClr;
                     BkgrdColor = fieldAttrBkgrdClr;
                 }
-                string formatedStr = String.Format("{0,-10} {1,-12}", message[1], message[2].Substring(0, 11));
+                string formatedStr = String.Format("{0,-10}", dateTimeString);
                 WriteConsole(formatedStr, TxtColor, BkgrdColor);
                 CallTxtColor = (AttrColor)Enum.Parse(typeof(AttrColor), message[10]);
                 if (htmlFlowToFile)
@@ -1549,7 +1635,7 @@ public class SiplogTWO
             else
             {
                 string spaceLeft = new String(' ', 26 - (int)(Math.Floor((decimal)(displayedline.Length / 2))));
-                string spaceRight = new String(' ', 27 - (int)(Math.Ceiling((decimal)(displayedline.Length / 2)))) + "|";
+                string spaceRight = new String(' ', 53 - spaceLeft.Length - displayedline.Length) + "|";
                 if (invert)
                 {
                     TxtColor = fieldAttrTxtInvrtClr;
@@ -1560,7 +1646,7 @@ public class SiplogTWO
                     TxtColor = fieldAttrTxtClr;
                     BkgrdColor = fieldAttrBkgrdClr;
                 }
-                string formatedStr = String.Format("{0,-10} {1,-12}|", message[1], message[2].Substring(0, 11));
+                string formatedStr = String.Format("{0,-10}|", dateTimeString);
                 WriteConsole(formatedStr, TxtColor, BkgrdColor);
                 for (int i = 0; i < srcindx - 1; i++)
                 {
@@ -1612,7 +1698,7 @@ public class SiplogTWO
                 TxtColor = fieldAttrTxtClr;
                 BkgrdColor = fieldAttrBkgrdClr;
             }
-            string formatedStr = String.Format("{0,-10} {1,-12}|", message[1], message[2].Substring(0, 11));
+            string formatedStr = String.Format("{0,-10}|", dateTimeString);
             WriteConsole(formatedStr, TxtColor, BkgrdColor);
             for (int i = 0; i < lowindx; i++)
             {
@@ -1756,7 +1842,7 @@ public class SiplogTWO
             }
             else if (keypress.Key == ConsoleKey.O)
             {
-                lock (_locker)
+                lock (_DisplayLocker)
                 {
                     Console.ForegroundColor = msgBoxTxt;
                     Console.BackgroundColor = msgBoxBkgrd;
@@ -1905,6 +1991,45 @@ public class SiplogTWO
                     }
                     Flow(false);  //display call flow Diagram
                 }
+            }
+            else if (keypress.Key == ConsoleKey.H)
+            {
+                lock (_DisplayLocker)
+                {
+                    Console.ForegroundColor = msgBoxTxt;
+                    Console.BackgroundColor = msgBoxBkgrd;
+                    int center = Math.Max(0, (int)Math.Floor((decimal)((Console.WindowWidth - 64) / 2)));
+                    Console.CursorLeft = center; Console.WriteLine(@"+------------------------------------------------------------+\ ");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Key                                                       | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Down Arrow / Page Down ----------------- move cursor down | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Up Arrow / Page Up ----------------------- move cursor up | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Spacebar / Enter ----------------------- view ISP message | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Enter ------------------------- Show diagram of call flow | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  Esc ----------------------- Exit to the list of call legs | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  H -------------------------------------- This help dialog | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  D -- Show SIP messages where  Src and Dst IP are the same | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  O --------------------------- Write the diagram to a file | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|  T -------------------------- Toggle local, UTC, timestamp | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"|                                                            | |");
+                    Console.CursorLeft = center; Console.WriteLine(@"+------------------------------------------------------------+ |");
+                    Console.CursorLeft = center; Console.WriteLine(@" \____________________________________________________________\|");
+                    Console.BackgroundColor = fieldConsoleBkgrdClr;  //change the colors of the current postion to normal
+                    Console.ForegroundColor = fieldConsoleTxtClr;
+                    Console.ReadKey(true);
+                    Flow(false);  //display call flow Diagram
+                }
+            }
+            else if (keypress.Key == ConsoleKey.T)
+            {
+                if (timeMode == TZmode.stamp)
+                {
+                    timeMode = TZmode.local;
+                }
+                else
+                {
+                    timeMode++;
+                }
+                Flow(false);
             }
         }
         return;
@@ -2146,6 +2271,116 @@ public class SiplogTWO
                     break;
             }
         }
+    }
+
+    void TopLine(string line, short x)
+    {
+        string displayLine;
+        if (line.Length > 1)
+        {
+            displayLine = line + new String(' ', Math.Max(Console.BufferWidth - line.Length, 0));
+        }
+        else
+        {
+            displayLine = line;
+        }
+        ConsoleBuffer.SetAttribute(x, 0, line.Length, (short)(statusBarTxtClr + (short)(((short)statusBarBkgrdClr) * 16)));
+        ConsoleBuffer.WriteAt(x, 0, displayLine);
+    }
+
+    void WriteScreen(string line, short x, short y, AttrColor attr, AttrColor bkgrd)
+    {
+        ConsoleBuffer.SetAttribute(x, y, line.Length, (short)(attr + (short)(((short)bkgrd) * 16)));
+        ConsoleBuffer.WriteAt(x, y, line);
+    }
+
+    void WriteConsole(string line, AttrColor attr, AttrColor bkgrd)
+    {
+        if (writeFlowToFile)
+        {
+            if (htmlFlowToFile)
+            {
+                string htmlTxtClr;
+                if (attr.ToString() == "Cyan")
+                {
+                    htmlTxtClr = "DarkTurquoise";
+                }
+                else if (attr.ToString() == "Yellow")
+                {
+                    htmlTxtClr = "GoldenRod";
+                }
+                else if (attr.ToString() == "DarkGreen")
+                {
+                    htmlTxtClr = "YellowGreen";
+                }
+                else if (attr.ToString() == "DarkCyan")
+                {
+                    htmlTxtClr = "CadetBlue";
+                }
+                else if (attr.ToString() == "Gray")
+                {
+                    htmlTxtClr = "Black";
+                }
+                else
+                {
+                    htmlTxtClr = attr.ToString();
+                }
+                flowFileWriter.Write("<code style = \"color:" + htmlTxtClr + ";\" >");
+
+            }
+            flowFileWriter.Write(line);
+            if (htmlFlowToFile) { flowFileWriter.Write("</code>"); }
+        }
+        else
+        {
+            WriteScreen(line, (short)fakeCursor[0], (short)fakeCursor[1], attr, bkgrd);
+            fakeCursor[0] = fakeCursor[0] + line.Length;
+        }
+    }
+
+    void WriteLineConsole(string line, AttrColor attr, AttrColor bkgrd)
+    {
+        if (writeFlowToFile)
+        {
+            flowFileWriter.WriteLine(line);
+        }
+        else
+        {
+            WriteConsole(line + new String(' ', Console.BufferWidth - line.Length)
+            , attr, bkgrd);
+            fakeCursor[1]++;
+            fakeCursor[0] = 0;
+        }
+    }
+
+    void ClearConsole()
+    {
+        bool iswriteFlowToFileTrue = writeFlowToFile;
+        writeFlowToFile = false;
+        int[] prevFakeCursor = new int[2];
+        prevFakeCursor = fakeCursor;
+        fakeCursor[0] = 0; fakeCursor[1] = 0;
+        for (int i = 0; i < Console.BufferHeight; i++)
+        {
+            WriteLineConsole("", fieldAttrTxtClr, fieldAttrBkgrdClr);
+        }
+        fakeCursor = prevFakeCursor;
+        writeFlowToFile = iswriteFlowToFileTrue;
+    }
+
+    void ClearConsoleNoTop()
+    {
+        bool iswriteFlowToFileTrue = writeFlowToFile;
+        writeFlowToFile = false;
+        int[] prevFakeCursor = new int[2];
+        prevFakeCursor = fakeCursor;
+        fakeCursor[0] = 0; fakeCursor[1] = 1;
+        for (int i = 0; i < Console.BufferHeight; i++)
+        {
+            WriteLineConsole("", fieldAttrTxtClr, fieldAttrBkgrdClr);
+        }
+        fakeCursor = prevFakeCursor;
+        writeFlowToFile = iswriteFlowToFileTrue;
     }
 }
 
