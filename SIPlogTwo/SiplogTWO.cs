@@ -23,7 +23,8 @@ public class SiplogTWO
     */
     string beginMsgRgxStr = @"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6}.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"; //regex to match the begining of the sip message (if it starts with a date and has time and two IP addresses)  for tcpdumpdump
     string dateRgxStr = @"(\d{4}-\d{2}-\d{2})"; //for tcpdumpdump
-    string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})"; //for tcpdumpdump
+    //string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})"; //for tcpdumpdump
+    string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})(-|\+)(\d{2}:\d{2})"; // group 1 is local time group 2 is + or - group 3 is TZ offset
     string srcIpPortRgxStr = @"(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:|.)\d*(?= >)";
     string srcIpRgxStr = @"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?=(.|:)\d* >)";
     string dstIpPortRgxStr = @"(?<=> )(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:|.)\d*";
@@ -1292,6 +1293,11 @@ public class SiplogTWO
                     Console.BufferHeight = Math.Max(Math.Min(10 + selectedmessages.Count, Int16.MaxValue - 1), Console.BufferHeight);
                 }
                 flowWidth = 24;
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("<div class=\"hosts\">");
+                    flowFileWriter.Write("<br>");
+                }
                 WriteConsole(new String(' ', 17), fieldAttrTxtClr, fieldAttrBkgrdClr);
                 foreach (string ip in IPsOfIntrest)
                 {
@@ -1319,6 +1325,14 @@ public class SiplogTWO
                 }
                 WriteLineConsole("", fieldAttrTxtClr, fieldAttrBkgrdClr);
                 WriteLineConsole(new String('-', flowWidth - 1), fieldAttrTxtClr, fieldAttrBkgrdClr);
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("</div>");
+                }
+                if (htmlFlowToFile)
+                {
+                    flowFileWriter.Write("<div class=\"main\">");
+                }
                 foreach (string[] msg in selectedmessages)
                 {
                     WriteMessageLine(msg, false);
@@ -1785,7 +1799,16 @@ public class SiplogTWO
                             flowFileWriter.WriteLine("<!DOCTYPE html>");
                             flowFileWriter.WriteLine("<html>");
                             flowFileWriter.WriteLine("<head>");
-                            flowFileWriter.WriteLine("<style> a:link {text-decoration: none} </style>");
+                            flowFileWriter.WriteLine("<style> a:link {text-decoration: none} ");
+                            flowFileWriter.WriteLine(".hosts {");
+                            flowFileWriter.WriteLine("  position: fixed;");
+                            flowFileWriter.WriteLine("  background-color: white;");
+                            flowFileWriter.WriteLine("  top: 0;");
+                            flowFileWriter.WriteLine("}");
+                            flowFileWriter.WriteLine(".main {");
+                            flowFileWriter.WriteLine("  margin-top: 4.5em;");
+                            flowFileWriter.WriteLine("}");
+                            flowFileWriter.WriteLine("</style>");
                             flowFileWriter.WriteLine("<font face=\"Courier\" >");
                             flowFileWriter.WriteLine("</head>");
                             flowFileWriter.WriteLine("<body>");
@@ -1871,6 +1894,7 @@ public class SiplogTWO
                         }
                         if (htmlFlowToFile)
                         {
+                            flowFileWriter.Write("</div>");
                             flowFileWriter.WriteLine("</pre>");
                             flowFileWriter.WriteLine("</body>");
                             flowFileWriter.WriteLine("</html>");
