@@ -225,7 +225,7 @@ public class SiplogTWO
         try
         {
             string[] fileAry = new string[100];
-            float version = 2.2f;
+            float version = 2.3f;
             string dotNetVersion = Environment.Version.ToString();
             SiplogTWO SiplogTWOObj = new SiplogTWO();
             if (Console.BufferWidth < 200) { Console.BufferWidth = 200; }
@@ -245,6 +245,13 @@ public class SiplogTWO
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine(@"SIPlog requires .NET 4 runtime https://www.microsoft.com/net/download/windows");
                 Console.ForegroundColor = ConsoleColor.Gray;
+                Environment.Exit(1);
+            }
+            if (arg.Length==0)
+            {
+                Console.WriteLine("no file(s) specified ");
+                Console.WriteLine("Usage: siplogtwo.exe logfile.log anotherlogfile.log ...");
+                Console.ReadKey(true);
                 Environment.Exit(1);
             }
             for (int i = 0; i < arg.Length; i++)  //check for options
