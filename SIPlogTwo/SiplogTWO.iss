@@ -26,7 +26,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: mypAssociation; Description: "Associate ""sls"" extension"; GroupDescription: File extensions:
+Name: mypAssociation; Description: "Associate "".log"" extension"; GroupDescription: File extensions:
 
 [Files]
 Source: "C:\Users\palmerg\source\repos\SIPlogTwo\SIPlogTwo\bin\Release\SIPlogTwo.exe"; DestDir: "{app}"; Flags: ignoreversion

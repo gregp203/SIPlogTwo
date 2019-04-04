@@ -24,7 +24,7 @@ public class SiplogTWO
     */
     string beginMsgRgxStr = @"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6}.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"; //regex to match the begining of the sip message (if it starts with a date and has time and two IP addresses)  for tcpdumpdump
     //string dateRgxStr = @"(\d{4}-\d{2}-\d{2})"; //for tcpdumpdump
-    string dateRgxStr = @"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6}(-|\+)\d{2}:\d{2})";
+    string dateRgxStr = @"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6}((-|\+)\d{2}:\d{2})?";
     //string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})"; //for tcpdumpdump
     //string timeRgxStr = @"(\d{2}:\d{2}:\d{2}.\d{6})(-|\+)(\d{2}:\d{2})"; // group 1 is local time group 2 is + or - group 3 is TZ offset
     string srcIpPortRgxStr = @"(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:|.)\d*(?= >)";
